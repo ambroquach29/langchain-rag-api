@@ -3,27 +3,42 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 
-# 1. Set up API Key
-# Set your Google API key in the environment variable before running the script.
 
-# Example: export GOOGLE_API_KEY='your-api-key-here'
-# load_dotenv()
-# api_key = os.getenv('GOOGLE_API_KEY')
-# if not api_key:
-#     raise ValueError(
-#         "GOOGLE_API_KEY environment variable not set. Please set it before running.")
-# print("[INFO] Google API key loaded from environment.")
+# 1. Load environment variables
+load_dotenv()
 
-os.environ['GOOGLE_API_KEY'] = 'AIzaSyCYcRsiMwyaoe2GrS6qifdVKi2fVdz3Et8'
+# 2. Select provider: 'gemini', 'openai', or 'anthropic'
+PROVIDER = os.getenv('PROVIDER', 'gemini').lower()
 
-# 2. Initialize Embeddings Model
-print("[INFO] Initializing Gemini embeddings model...")
-embeddings_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+# 3. Set up API keys and models for each provider
+if PROVIDER == 'gemini':
+    api_key = os.getenv('GOOGLE_API_KEY')
+    if not api_key:
+        raise ValueError(
+            "GOOGLE_API_KEY environment variable not set. Please set it before running.")
+    os.environ['GOOGLE_API_KEY'] = api_key
+    print("[INFO] Using Gemini provider.")
+    embeddings_model = GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001")
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite-preview-06-17")
+elif PROVIDER == 'openai':
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        raise ValueError(
+            "OPENAI_API_KEY environment variable not set. Please set it before running.")
+    os.environ['OPENAI_API_KEY'] = api_key
+    print("[INFO] Using OpenAI provider.")
+    embeddings_model = OpenAIEmbeddings()
+    llm = ChatOpenAI()
+else:
+    raise ValueError(
+        f"Unknown PROVIDER: {PROVIDER}. Use 'gemini' or 'openai'.")
 
-# 3. Generate Embeddings for Sample Documents
+# 4. Generate Embeddings for Sample Documents
 sample_texts = [
     "This is the Fundamentals of RAG course.",
     "Educative is an AI-powered online learning platform.",
@@ -36,7 +51,7 @@ embeddings = embeddings_model.embed_documents(sample_texts)
 print(
     f"[INFO] Embeddings generated. Shape: ({len(embeddings)}, {len(embeddings[0])})")
 
-# 4. Prepare Example Documents for Vector Store
+# 5. Prepare Example Documents for Vector Store
 documents = [
     "Python is a high-level programming language known for its readability and versatile libraries.",
     "Java is a popular programming language used for building enterprise-scale applications.",
@@ -50,12 +65,12 @@ documents = [
 print(
     f"[INFO] Preparing {len(documents)} example documents for vector store...")
 
-# 5. Create Chroma Vector Store
+# 6. Create Chroma Vector Store
 print("[INFO] Creating Chroma vector store from documents...")
 db = Chroma.from_texts(documents, embeddings_model)
 print("[INFO] Chroma vector store created.")
 
-# 6. Configure Retriever
+# 7. Configure Retriever
 print("[INFO] Configuring retriever (top 1, similarity search)...")
 retriever = db.as_retriever(
     search_type="similarity",
@@ -63,7 +78,7 @@ retriever = db.as_retriever(
 )
 print("[INFO] Retriever configured.")
 
-# 7. Perform a Similarity Search
+# 8. Perform a Similarity Search
 query = "Where can I see Mona Lisa?"
 print(f"[INFO] Performing similarity search for query: '{query}'")
 result = retriever.invoke(query)
@@ -71,12 +86,6 @@ print("[RESULT] Retrieved document(s):")
 for doc in result:
     print(f"- {doc.page_content if hasattr(doc, 'page_content') else doc}")
 print('\n')
-
-# 8. Notes on Retriever Parameters
-# The as_retriever() method accepts two parameters and initializes a VectorStoreRetriever from the vector store.
-# search_type: "similarity" (default), "mmr", or "similarity_score_threshold"
-# search_kwargs: k (number of docs), score_threshold, fetch_k, lambda_mult, filter
-
 
 # 9. Define a template for generating answers using provided context
 template = """
@@ -118,13 +127,11 @@ def format_docs(docs):
     """Joins the page_content of retrieved documents into a single string."""
     return "\n\n".join(doc.page_content for doc in docs)
 
+# 2. LLM is already initialized above
 
-# 2. Initialize the language model
-llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
 
 # 3. Construct the corrected chain
 rag_chain = (
-    # The 'context' is now passed through the retriever AND the formatting function
     {"context": retriever | format_docs, "question": RunnablePassthrough()}
     | custom_rag_prompt
     | llm
@@ -136,13 +143,3 @@ print("[INFO] Invoking RAG chain...")
 response = rag_chain.invoke("What is the future of AI?")
 print("\n[Final Answer]")
 print(response)
-
-'''
-It’s possible to perform each step without using a chain, but it would require manually handling the flow of data through each component. Instead of linking components together seamlessly, we would have to call the invoke method on each component individually and manage the intermediate outputs ourselves. Let’s take a look at what it looks like:
-
-passthrough_output = RunnablePassthrough().invoke("Question text")
-retriever_output = retriever.invoke({"context": retriever_context, "question": passthrough_output})
-custom_prompt_output = custom_rag_prompt.invoke(retriever_output)
-llm_output = llm.invoke(custom_prompt_output)
-final_output = StrOutputParser().invoke(llm_output)
-'''
