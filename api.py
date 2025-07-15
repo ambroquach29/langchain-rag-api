@@ -18,9 +18,9 @@ app.add_middleware(
 @app.post("/generate-response")
 async def generate_response_api(
     file: UploadFile,
-    openai_api_key: str = Form(...),
+    google_api_key: str = Form(...),
     query_text: str = Form(...)
 ):
     file_content = (await file.read()).decode()
-    response = generate_response(file_content, openai_api_key, query_text)
+    response = generate_response(file_content, google_api_key, query_text)
     return JSONResponse(content={"result": response})
